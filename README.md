@@ -6,7 +6,8 @@ This program is *not* complete or functional right now. Nonetheless:
  1. Download and unzip the project
  2. Make sure you have the latest version of Python 3
  3. Install on the command line with `python setup.py install`
- 4. Run the command-line interface with `./true_commute/true_commute`
+ 4. Get a [Google API key](http://www.google.com/) and set it as the environment variable `GOOGLE_API_KEY`
+ 5. Run the command-line interface with `./true_commute/true_commute`
 
 ## Inspiration
  - [The True Cost of Commuting](http://www.mrmoneymustache.com/2011/10/06/the-true-cost-of-commuting/) by Mr. Money Mustache
