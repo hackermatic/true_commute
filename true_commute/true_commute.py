@@ -2,10 +2,8 @@
 """Calculate your true commute time and cost using an interactive command line.
 
 The user provides their current car commute information using an interactive
-command line. This program calculates various metrics about the hidden costs of
-that commute and compares them (where possible) to commuting by mass transit,
-bicycle, and foot. All of the metrics are displayed to the user including the
-"best" commute method for each metric.
+command line. This program calculates and displays various metrics about the
+hidden costs of that commute.
 
 This module requires a Google API key, which you can obtain from
 <https://console.developers.google.com>. Set it as an environment variable
@@ -19,10 +17,8 @@ Attributes:
 Raises:
     KeyError: If the environment variable ``GOOGLE_API_KEY`` is not set
 """
-import itertools
 import os
 import sys
-from multiprocessing.dummy import Pool as ThreadPool
 
 import click
 from googlemaps import client, geocoding, distance_matrix
@@ -54,27 +50,27 @@ class UserCommute(object):
             Google Maps for distance and directions
         commute_ending_address (str): Any address that can be geocoded by
             Google Maps for distance and directions
+        work_days_per_week (int)
         work_hours_per_week (float)
         wage_per_hour (float): Assumes US dollars
         car_payment_per_month (float): Assumes US dollars
         parking_cost_per_month (float): Assumes US dollars
-        is_bike_owner (bool)
     """
     # TODO Switch the money variables to use the money class:
     #     https://pypi.python.org/pypi/money/
     #     (primarily so it's easy to format prettily)
     def __init__(
             self, commute_starting_address=None, commute_ending_address=None,
-            work_hours_per_week=None, wage_per_hour=None,
-            car_payment_per_month=None, parking_cost_per_month=None,
-            is_bike_owner=None):
+            work_days_per_week=None, work_hours_per_week=None,
+            wage_per_hour=None, car_payment_per_month=None,
+            parking_cost_per_month=None):
         self.commute_starting_address = commute_starting_address
         self.commute_ending_address = commute_ending_address
+        self.work_days_per_week = work_days_per_week
         self.work_hours_per_week = work_hours_per_week
         self.wage_per_hour = wage_per_hour
         self.car_payment_per_month = car_payment_per_month
         self.parking_cost_per_month = parking_cost_per_month
-        self.is_bike_owner = is_bike_owner
 
 
 def collect_user_commute():
@@ -97,6 +93,11 @@ def collect_user_commute():
             "Where does your commute end? (Example: 3555 Farnam St, Omaha NE "
             "68131)", default=user_commute.commute_ending_address)
 
+        user_commute.work_days_per_week = click.prompt(
+            "How many days do you work each week?",
+            default=user_commute.work_days_per_week,
+            prompt_suffix=CLI_PROMPT_SUFFIX, type=click.INT)
+
         user_commute.work_hours_per_week = click.prompt(
             "How many hours do you work each week?",
             default=user_commute.work_hours_per_week,
@@ -118,10 +119,6 @@ def collect_user_commute():
             "What do you spend on parking each month?",
             default=user_commute.parking_cost_per_month,
             prompt_suffix=CLI_PROMPT_SUFFIX, type=click.FLOAT)
-
-        user_commute.is_bike_owner = click.confirm(
-            "Do you own a bike?", default=user_commute.is_bike_owner,
-            prompt_suffix=CLI_PROMPT_SUFFIX)
 
         if not click.confirm("Do you need to correct any answers?"):
             break
@@ -164,15 +161,12 @@ def _collect_geocoded_address(text, default=None):
             formatted_address = geocoded[0]["formatted_address"]
             if click.confirm(
                     "Is the correct address " + formatted_address + "?",
-                    prompt_suffix=CLI_PROMPT_SUFFIX):
+                    prompt_suffix=CLI_PROMPT_SUFFIX, default=True):
                 return formatted_address
 
 
-def get_all_commute_options(commute_starting_address, commute_ending_address):
-    """Get time/distance for all possible transport modes from Google Maps.
-
-    Each mode must be queried separately, so this function spawns multiple
-    threads to :func:`_get_commute_option` and combines the results.
+def get_commute_details(commute_starting_address, commute_ending_address):
+    """Get commute time and distance from Google Maps
 
     Arguments:
         commute_starting_address (str): Any address that can be geocoded by
@@ -183,62 +177,18 @@ def get_all_commute_options(commute_starting_address, commute_ending_address):
             ``formatted_address`` from a Google Maps geocode operation.
 
     Returns:
-         dict: The transport modes, times, and distances, or None if Google
-         Maps can't create directions for these addresses.
-
-         The dict has the structure::
-
-            {"transport_mode_name_1": {"seconds": int, "meters": int},
-            "transport_mode_name_2": {"seconds": int, "meters": int}}
+         dict: ``{"duration_seconds": int, "distance_meters": int}`` or None if
+         Google Maps can't create directions for these addresses.
     """
-    # TODO Refactor this list to a constant somewhere, or a list of constants;
-    #      shouldn't tie explicitly to Google Maps API terms
-    transport_modes = ['driving', 'walking', 'transit', 'bicycling']
+    api_result = distance_matrix.distance_matrix(
+            MAPS_CLIENT, commute_starting_address, commute_ending_address)
+    api_result = api_result['rows'][0]['elements'][0]
 
-    pool = ThreadPool(len(transport_modes))
-    results_list = pool.starmap(_get_commute_option, zip(
-            itertools.repeat(commute_starting_address),
-            itertools.repeat(commute_ending_address),
-            transport_modes))
-    pool.close()
-    pool.join()
+    if api_result['status'] != "OK":
+        return None
 
-    results_dict = {}
-    for result in results_list:
-        results_dict.update(result)
-    return results_dict
-
-
-def _get_commute_option(
-        commute_starting_address, commute_ending_address, transport_mode):
-    """Get time/distance for a single transport mode from Google Maps
-
-    Arguments:
-        commute_starting_address (str): Any address that can be geocoded by
-            Google Maps for distance and directions
-        commute_ending_address (str): Any address that can be geocoded by
-            Google Maps for distance and directions
-        transport_mode (str): Any transport mode supported by Google Maps
-
-    Returns:
-        dict: The transport mode, time, and distance, or None if Google Maps
-        can't create directions for these addresses.
-
-        The dict has the structure::
-
-            {"transport_mode_name": {"seconds": int, "meters": int}}
-    """
-    matrix = distance_matrix.distance_matrix(
-            MAPS_CLIENT, commute_starting_address, commute_ending_address,
-            mode=transport_mode)
-    mode_data = matrix['rows'][0]['elements'][0]
-
-    if mode_data['status'] != "OK":
-        return {transport_mode: None}
-
-    return {transport_mode: {
-        "seconds": mode_data['duration']['value'],
-        "meters": mode_data['distance']['value']}}
+    return {"duration_seconds": api_result['duration']['value'],
+            "distance_meters": api_result['distance']['value']}
 
 
 def cli():
@@ -246,7 +196,7 @@ def cli():
     """
     # TODO Display a welcome banner and basic instructions
     user_commute = collect_user_commute()
-    options = get_all_commute_options(
+    details = get_commute_details(
             user_commute.commute_starting_address,
             user_commute.commute_ending_address)
     # TODO Now the hard stuff!

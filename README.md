@@ -1,5 +1,5 @@
 # true_commute
-Calculate your true commute time and cost
+Calculate your true car commute time and cost
 
 ## Getting started
 This program is *not* complete or functional right now. Nonetheless:
