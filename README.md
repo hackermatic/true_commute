@@ -6,7 +6,7 @@ This program is *not* complete or functional right now. Nonetheless:
  1. Download and unzip the project
  2. Make sure you have the latest version of Python 3
  3. Install on the command line with `python setup.py install`
- 4. Get a [Google API key](http://www.google.com/) and set it as the environment variable `GOOGLE_API_KEY`
+ 4. Get a [Google API key](https://console.developers.google.com/apis), enable the Google Maps Geocoding API and Google Maps Distance Matrix API, and set it as the environment variable `GOOGLE_API_KEY`
  5. Run the command-line interface with `./true_commute/true_commute`
 
 ## Inspiration
